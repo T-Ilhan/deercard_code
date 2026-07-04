@@ -1,0 +1,121 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+
+#include <ESP32_MCPWM.h>
+
+#include "logging.h"
+
+#define BOOT_DELAY  3000
+#define PWM_FREQ    10000
+
+// Left motor pins.
+#define L_LPWM_PIN 4
+#define L_RPWM_PIN 5
+#define L_LEN_PIN  6
+#define L_REN_PIN  7
+
+// Right motor pins.
+#define R_LPWM_PIN 9
+#define R_RPWM_PIN 10
+#define R_LEN_PIN 11
+#define R_REN_PIN 12
+
+int MOTOR_ENABLE_PINS[4] = { L_LEN_PIN, L_REN_PIN, R_LEN_PIN, R_REN_PIN };
+
+// NOTE: EN handled separately
+MotorMCPWMConfig L_cfg {L_LPWM_PIN, L_RPWM_PIN, -1, MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM0A, MCPWM0B};
+MotorMCPWMConfig R_cfg {R_LPWM_PIN, R_RPWM_PIN, -1, MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM1A, MCPWM1B};
+
+Motor motor_L, motor_R;
+
+// If one motor spins opposite to your “forward”, flip its FWD constant.
+static constexpr Dir L_FWD = Dir::CW;
+static constexpr Dir R_FWD = Dir::CCW;
+
+// Blynk
+#define BLYNK_PRINT Serial
+#define BLYNK_TEMPLATE_ID           "TMPL2lw_kjv5D"
+#define BLYNK_TEMPLATE_NAME         "Deer Platform Template"
+#define BLYNK_AUTH_TOKEN            "HUwoNrby3TsfDATHvNNb0nY0BWePOMAV"
+#include <BlynkSimpleEsp32.h>
+
+char ssid[] = "JDPhone-NG";
+char pass[] = "cyberauto";
+
+static float left_throttle = 0.0f;
+static float right_throttle = 0.0f;
+
+void setup() {
+    // Boot delay for easier debug
+    delay(BOOT_DELAY);
+
+    // Init serial
+    Serial.begin(115200);
+    LOG_INFO("DeerPlatformESP", "Starting...");
+    
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW);
+
+    // Init motors
+    L_cfg.pwm_freq_hz = PWM_FREQ;
+    motor_L.setup(L_cfg);
+    motor_L.start();
+
+    R_cfg.pwm_freq_hz = PWM_FREQ;
+    motor_R.setup(R_cfg);
+    motor_R.start();
+    
+    for (int pin : MOTOR_ENABLE_PINS) {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, HIGH);
+    }
+    // pinMode(L_LPWM_PIN, OUTPUT);
+    // pinMode(L_RPWM_PIN, OUTPUT);
+
+    // Init Blynk
+    Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(300);
+    digitalWrite(LED_BUILTIN, LOW);
+
+    LOG_OK("DeerPlatformESP", "OK!");
+}
+
+BLYNK_DISCONNECTED() {
+    left_throttle = 0.0f;
+    right_throttle = 0.0f;
+    motor_L.setSpeed(0, L_FWD);
+    motor_R.setSpeed(0, R_FWD);
+}
+
+BLYNK_INPUT(V10) {
+    float raw = getValue.asFloat();
+    float pct = (raw - 50.0f) * 2.0f;
+    left_throttle = pct;
+    // LOG_DEBUG("BLYNK V10", "%.3f", raw);
+}
+BLYNK_INPUT(V20) {
+    float raw = getValue.asFloat();
+    float pct = (raw - 50.0f) * 2.0f;
+    right_throttle = pct;
+    // LOG_DEBUG("BLYNK V20", "%.3f", raw);
+}
+
+void loop() {
+    // for (int spd = 0; spd <= 100; spd += 5) {
+    //     driveForward(spd, 100);
+    //     LOG_INFO("MotorTest", "Driving forward: %d%%", spd);
+    // }
+    // for (int spd = 100; spd >= 0; spd -= 5) {
+    //     driveForward(spd, 100);
+    //     LOG_INFO("MotorTest", "Driving forward: %d%%", spd);
+    // }
+
+    motor_L.setSpeedPercent(abs(left_throttle), left_throttle >= 0.0f ? L_FWD : IMotorDriver::changeDir(L_FWD));
+    motor_R.setSpeedPercent(abs(right_throttle), right_throttle >= 0.0f ? R_FWD : IMotorDriver::changeDir(R_FWD));
+    // LOG_INFO("Motor", "Throttle: %.1f L %.1f R", left_throttle, right_throttle);
+    Blynk.run();
+    delay(1);
+}

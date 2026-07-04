@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deer Platform Controller</title>
+<style>
+  body {
+    background: #111;
+    color: #eee;
+    font-family: monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+    user-select: none;
+  }
+  h1 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
+  #status { margin-bottom: 24px; font-size: 0.9rem; color: #f90; }
+  #status.connected { color: #4f4; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 80px);
+    grid-template-rows: repeat(2, 80px);
+    gap: 8px;
+  }
+  .key {
+    background: #222;
+    border: 2px solid #444;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    cursor: pointer;
+    transition: background 0.05s, border-color 0.05s;
+  }
+  .key.active {
+    background: #1a3a1a;
+    border-color: #4f4;
+    color: #4f4;
+  }
+  .key.wide {
+    grid-column: span 3;
+    font-size: 1rem;
+    letter-spacing: 4px;
+  }
+  #ip-row {
+    margin-top: 32px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  input {
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 6px;
+    color: #eee;
+    padding: 6px 10px;
+    font-family: monospace;
+    font-size: 0.95rem;
+    width: 160px;
+  }
+  button {
+    background: #1a3a1a;
+    border: 1px solid #4f4;
+    border-radius: 6px;
+    color: #4f4;
+    padding: 6px 14px;
+    font-family: monospace;
+    cursor: pointer;
+  }
+  button:hover { background: #2a5a2a; }
+</style>
+</head>
+<body>
+
+<h1>Deer Platform Controller</h1>
+<div id="status">Disconnected</div>
+
+<div class="grid">
+  <div class="key" id="key-placeholder-1"></div>
+  <div class="key" id="key-w" data-cmd="w">W</div>
+  <div class="key" id="key-placeholder-2"></div>
+  <div class="key" id="key-a" data-cmd="a">A</div>
+  <div class="key" id="key-s" data-cmd="s">S</div>
+  <div class="key" id="key-d" data-cmd="d">D</div>
+</div>
+
+<div id="ip-row">
+  <input id="ip-input" type="text" placeholder="192.168.x.x" />
+  <button onclick="connect()">Connect</button>
+</div>
+
+<script>
+  let ws = null;
+  const statusEl = document.getElementById('status');
+  const keys = { w: false, a: false, s: false, d: false };
+  let sendInterval = null;
+
+  function connect() {
+    const ip = document.getElementById('ip-input').value.trim();
+    if (!ip) return;
+    if (ws) ws.close();
+
+    ws = new WebSocket(`ws://${ip}:81`);
+
+    ws.onopen = () => {
+      statusEl.textContent = `Connected to ${ip}`;
+      statusEl.className = 'connected';
+    };
+    ws.onclose = () => {
+      statusEl.textContent = 'Disconnected';
+      statusEl.className = '';
+    };
+    ws.onerror = () => {
+      statusEl.textContent = 'Connection failed';
+      statusEl.className = '';
+    };
+  }
+
+  function send(cmd) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(cmd);
+    }
+  }
+
+  function getActiveCmd() {
+    if (keys.w) return 'w';
+    if (keys.s) return 's';
+    if (keys.a) return 'a';
+    if (keys.d) return 'd';
+    return null;
+  }
+
+  // Send loop at 50ms -- matches CMD_TIMEOUT_MS of 150ms on ESP32 with margin
+  sendInterval = setInterval(() => {
+    const cmd = getActiveCmd();
+    if (cmd) send(cmd);
+  }, 50);
+
+  // Keyboard events
+  document.addEventListener('keydown', e => {
+    if (['w','a','s','d'].includes(e.key.toLowerCase()) && !e.repeat) {
+      const k = e.key.toLowerCase();
+      keys[k] = true;
+      document.getElementById(`key-${k}`).classList.add('active');
+    }
+    if (e.key === ' ') { e.preventDefault(); send(' '); }
+  });
+
+  document.addEventListener('keyup', e => {
+    if (['w','a','s','d'].includes(e.key.toLowerCase())) {
+      const k = e.key.toLowerCase();
+      keys[k] = false;
+      document.getElementById(`key-${k}`).classList.remove('active');
+    }
+  });
+</script>
+</body>
+</html>
+
